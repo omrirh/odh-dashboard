@@ -62,7 +62,7 @@ ENV NODE_PATH "$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules"
 ENV PATH "$NVM_DIR/versions/node/$NODE_VERSION/bin:/bin:$HOME/.local/bin:/root/.local/bin:$PATH"
 RUN mkdir -p $NVM_DIR
 
-# Install Node Version Manager, NodeJS and the packages for CI (package-lock.json) 
+# Install Node Version Manager, NodeJS and the packages for CI (package-lock.json)
 RUN curl -o- $NVM_INSTALLER | bash
 RUN /bin/bash -c "source $NVM_DIR/nvm.sh && \
     nvm install $NODE_VERSION && \
@@ -83,3 +83,9 @@ LABEL io.opendatahub.component="odh-cypress" \
       name="open-data-hub/odh-cypress" \
       summary="odh-cypress" \
       description="Image for Running Cypress Tests for Open Data Hub Dashboard"
+
+RUN chgrp -R 0 $USER_HOME && chmod -R g+rwX $USER_HOME
+
+
+USER 1001
+WORKDIR $USER_HOME/frontend
