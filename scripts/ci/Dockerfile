@@ -48,32 +48,39 @@ RUN rm -rf /var/cache/yum
 # Set capability to adjust OOM score for Node
 RUN echo CAP_SYS_NICE >> /etc/security/limits.conf
 
-# Copy NodeJS packages lists (json files) from "frontend" directory 
-WORKDIR $USER_HOME
+# Copy only lockfiles for Docker layer cache
+WORKDIR $USER_HOME/frontend
 COPY ./frontend/package*.json ./
-RUN chown $USER:0 ./*
 
-# Switch to the user, export env variables, and prepare NVM directories
-USER $USER
-ENV USER $USER
-ENV HOME $USER_HOME
-ENV NVM_DIR $USER_HOME/nvm
-ENV NODE_PATH "$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules"
-ENV PATH "$NVM_DIR/versions/node/$NODE_VERSION/bin:/bin:$HOME/.local/bin:/root/.local/bin:$PATH"
-RUN mkdir -p $NVM_DIR
-
-# Install Node Version Manager, NodeJS and the packages for CI (package-lock.json)
-RUN curl -o- $NVM_INSTALLER | bash
-RUN /bin/bash -c "source $NVM_DIR/nvm.sh && \
+# Install NVM, NodeJS, install Cypress binary after npm ci
+RUN mkdir -p $USER_HOME/nvm && \
+    export NVM_DIR=$USER_HOME/nvm && \
+    curl -o- $NVM_INSTALLER | bash && \
+    bash -c "export NVM_DIR=$USER_HOME/nvm && \
+    [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\" && \
     nvm install $NODE_VERSION && \
     nvm use --delete-prefix $NODE_VERSION && \
-    npm config set prefix '$NPM_CACHE' && \
-    echo 'export PATH=$PATH' >> '$USER_HOME/.profile' && \
-    source $USER_HOME/.profile && \
+    npm config set prefix \"$NPM_CACHE\" && \
     npm cache -g clean --force && \
-    npm ci --cache=$NPM_CACHE"
+    npm ci --cache=\"$NPM_CACHE\" && \
+    npx cypress install"
 
-# Export NPM and Cypress Cache directories (to be accesible by rootless user)
+# Copy the full frontend source after npm ci for caching
+COPY ./frontend/. ./
+RUN chown $USER:0 ./*
+
+# Set user and environment variables
+USER $USER
+ENV USER=$USER
+ENV HOME=$USER_HOME
+ENV NVM_DIR=$USER_HOME/nvm
+ENV NODE_PATH="$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules"
+ENV PATH="$NVM_DIR/versions/node/$NODE_VERSION/bin:/bin:$HOME/.local/bin:/root/.local/bin:$PATH"
+
+# Create NVM directory for user (redundant safety)
+RUN mkdir -p $NVM_DIR
+
+# Export NPM and Cypress Cache directories (to be accessible by rootless user)
 ENV NPM_CONFIG_CACHE $NPM_CACHE
 ENV CYPRESS_CACHE_FOLDER $CYPRESS_CACHE
 
@@ -84,8 +91,7 @@ LABEL io.opendatahub.component="odh-cypress" \
       summary="odh-cypress" \
       description="Image for Running Cypress Tests for Open Data Hub Dashboard"
 
-RUN chgrp -R 0 $USER_HOME && chmod -R g+rwX $USER_HOME
-
-
+# Fix permissions for OpenShift runtime
+USER root
+RUN chown -R 1001:0 $USER_HOME $NPM_CACHE && chmod -R g+rwX $USER_HOME $NPM_CACHE
 USER 1001
-WORKDIR $USER_HOME/frontend
